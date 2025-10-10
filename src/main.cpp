@@ -6,7 +6,11 @@
 #include "cert.h"
 #include "config.h"
 
+#if USE_HTTPS
 WiFiClientSecure client;
+#else
+WiFiClient client;
+#endif
 HTTPClient http;
 
 const int GPIO_SATA = 5;
@@ -105,9 +109,12 @@ void setup() {
 
     // Set Root CA certificate
     Serial.print("Setting Root CA certificate...");
+#if USE_HTTPS
     client.setCACert(ROOT_CA);
     Serial.println("done.");
-
+#else
+    Serial.println("skipped (HTTP mode).");
+#endif
     // Initial Wi-Fi connection attempt
     Serial.printf("Connecting to '%s'...", SSID);
     WiFi.setHostname(HOSTNAME);

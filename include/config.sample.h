@@ -1,3 +1,5 @@
+#define USE_HTTPS 0
+
 const char* PC_NAME = "PC Name";
 
 const char* SSID = "Wi-Fi Name";
