@@ -104,6 +104,7 @@ void setup() {
 #else
     Serial.println("skipped (HTTP mode).");
 #endif
+
     // Initial Wi-Fi connection attempt
     Serial.printf("Connecting to '%s'...", SSID);
     WiFi.setHostname(HOSTNAME);
