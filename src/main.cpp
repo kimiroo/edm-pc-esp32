@@ -152,7 +152,7 @@ void loop() {
 
     lastIsAlive = (sataState == LOW) || lastIsAlive;
     lastIsOpened = (chassisState == HIGH) || lastIsOpened;
-    isReportRequired = isReportRequired || lastIsAlive || lastIsOpened;
+    isReportRequired = isReportRequired || lastIsOpened;
 
     // Report to the server
     if (reportLoopCount == 0 || isReportRequired) {
