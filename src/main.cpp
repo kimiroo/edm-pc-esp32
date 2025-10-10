@@ -16,47 +16,18 @@ const int GPIO_SEED = 2;
 
 bool isInitLoop = true;
 bool isReportRequired = false;
+bool lastIsAlive = false;
+bool lastIsOpened = false;
 int wifiTimeoutCount = 0;
 int reportLoopCount = 0;
 
-const int LOOP_DELAY_MS = 100;
+const int LOOP_DELAY_MS = 50;
 const int REPORT_INTERVAL_SECONDS = 60;
 const int WIFI_RECONNECT_INTERVAL_SECONDS = 5;
 const int REPORT_LOOP_COUNT_MAX = (REPORT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
 const int WIFI_RECONNECT_LOOP_COUNT_MAX = (WIFI_RECONNECT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
 
 char* sessionId;
-
-void connectWiFi() {
-    while (true) {
-        Serial.print("Connecting to ");
-        Serial.print(SSID);
-
-        WiFi.setHostname(HOSTNAME);
-
-        WiFi.begin(SSID, PASSWORD);
-
-        int wifi_tries = 0;
-        while (WiFi.status() != WL_CONNECTED && wifi_tries <= 20) {
-            wifi_tries += 1;
-            delay(500);
-            Serial.print(".");
-        }
-
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.println("");
-            Serial.print("Connected to ");
-            Serial.print(SSID);
-            Serial.println(".");
-
-            Serial.println("IP address: ");
-            Serial.println(WiFi.localIP());
-            break;
-        } else {
-            Serial.println("Connection timed out. Retrying...");
-        }
-    }
-}
 
 void generateRandomString(char* buffer, int length) {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -159,7 +130,10 @@ void loop() {
     // Get current state
     int sataState = digitalRead(GPIO_SATA);
     int chassisState = digitalRead(GPIO_CHASSIS);
-    isReportRequired = sataState == HIGH || chassisState == HIGH;
+
+    lastIsAlive = (sataState == HIGH) || lastIsAlive;
+    lastIsOpened = (chassisState == HIGH) || lastIsOpened;
+    isReportRequired = isReportRequired || lastIsAlive || lastIsOpened;
 
     if (sataState == LOW) {
         Serial.print("SATA: LOW ; ");
@@ -177,7 +151,7 @@ void loop() {
     if (reportLoopCount == 0 || isReportRequired) {
         if (WiFi.status() == WL_CONNECTED) {
             JsonDocument apiResponse;
-            reportToServer(sataState == HIGH, chassisState == HIGH, apiResponse);
+            reportToServer(lastIsAlive, lastIsOpened, apiResponse);
             if (apiResponse["isSuccessful"].as<bool>()) {
                 //
             }
