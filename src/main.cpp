@@ -3,6 +3,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include "headers.h"
 #include "cert.h"
 #include "config.h"
 
@@ -13,27 +14,15 @@ WiFiClient client;
 #endif
 HTTPClient http;
 
-const int GPIO_SATA = 5;
-const int GPIO_CHASSIS = 4;
-const int GPIO_ATX = 3;
-const int GPIO_SEED = 2;
-
 bool isReportRequired = false;
 bool lastIsAlive = false;
 bool lastIsOpened = false;
+bool isIsOpenedReported = false;
 // Initialize to 1 to prevent an immediate reconnection attempt on the first loop,
 // as setup() already initiates it.
 int wifiTimeoutCount = 1;
 int reportLoopCount = 0;
 unsigned long loopCooldownUntil = 0;
-
-const int LOOP_DELAY_MS = 50;
-const int REPORT_INTERVAL_SECONDS = 60;
-const int WIFI_RECONNECT_INTERVAL_SECONDS = 5;
-const int POST_ATX_POWER_TRIGGER_COOLDOWN_SECONDS = 10;
-const int ATX_POWER_TRIGGER_PULSE_DURATION_MS = 500;
-const int REPORT_LOOP_COUNT_MAX = (REPORT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
-const int WIFI_RECONNECT_LOOP_COUNT_MAX = (WIFI_RECONNECT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
 
 char sessionId[33];
 
@@ -150,9 +139,14 @@ void loop() {
     int sataState = digitalRead(GPIO_SATA);
     int chassisState = digitalRead(GPIO_CHASSIS);
 
-    lastIsAlive = (sataState == LOW) || lastIsAlive;
-    lastIsOpened = (chassisState == HIGH) || lastIsOpened;
-    isReportRequired = isReportRequired || lastIsOpened;
+    if (chassisState == HIGH && !lastIsOpened) {
+        isIsOpenedReported = false;
+    }
+
+    lastIsAlive = (sataState == PC_ON) || lastIsAlive;
+    lastIsOpened = (chassisState == CHASSIS_OPEN) || lastIsOpened;
+
+    isReportRequired = !isIsOpenedReported && (isReportRequired || lastIsOpened);
 
     // Report to the server
     if (reportLoopCount == 0 || isReportRequired) {
@@ -175,6 +169,7 @@ void loop() {
                 lastIsAlive = false;
                 lastIsOpened = false;
                 isReportRequired = false;
+                isIsOpenedReported = true;
             }
         }
     }
