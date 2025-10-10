@@ -21,7 +21,9 @@ int reportLoopCount = 0;
 
 const int LOOP_DELAY_MS = 100;
 const int REPORT_INTERVAL_SECONDS = 60;
+const int WIFI_RECONNECT_INTERVAL_SECONDS = 5;
 const int REPORT_LOOP_COUNT_MAX = (REPORT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
+const int WIFI_RECONNECT_LOOP_COUNT_MAX = (WIFI_RECONNECT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
 
 char* sessionId;
 
@@ -147,7 +149,8 @@ void loop() {
             WiFi.setHostname(HOSTNAME);
             WiFi.begin(SSID, PASSWORD);
         }
-        wifiTimeoutCount = (wifiTimeoutCount + 1) % 50; // Trigger the reconnect attempt every 50 loops
+        // Trigger the reconnect attempt every 50 loops
+        wifiTimeoutCount = (wifiTimeoutCount + 1) % WIFI_RECONNECT_LOOP_COUNT_MAX;
     } else {
         // If the connection is stable, reset the reconnect attempt counter
         wifiTimeoutCount = 0;
