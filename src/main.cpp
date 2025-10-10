@@ -14,20 +14,22 @@ const int GPIO_CHASSIS = 4;
 const int GPIO_ATX = 3;
 const int GPIO_SEED = 2;
 
-bool isInitLoop = true;
 bool isReportRequired = false;
 bool lastIsAlive = false;
 bool lastIsOpened = false;
 int wifiTimeoutCount = 0;
 int reportLoopCount = 0;
+unsigned long loopCooldownUntil = 0;
 
 const int LOOP_DELAY_MS = 50;
 const int REPORT_INTERVAL_SECONDS = 60;
 const int WIFI_RECONNECT_INTERVAL_SECONDS = 5;
+const int POST_ATX_POWER_TRIGGER_COOLDOWN_SECONDS = 10;
+const int ATX_POWER_TRIGGER_PULSE_DURATION_MS = 500;
 const int REPORT_LOOP_COUNT_MAX = (REPORT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
 const int WIFI_RECONNECT_LOOP_COUNT_MAX = (WIFI_RECONNECT_INTERVAL_SECONDS * 1000) / LOOP_DELAY_MS;
 
-char* sessionId;
+char sessionId[33];
 
 void generateRandomString(char* buffer, int length) {
     const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -96,7 +98,6 @@ void setup() {
     // Generate Session ID
     Serial.print("Generating Session ID...");
     randomSeed(analogRead(GPIO_SEED));
-    sessionId = new char[33]; // Allocate memory on the heap for the session ID
     generateRandomString(sessionId, 32);
     Serial.println("done.");
 
@@ -111,20 +112,23 @@ void setup() {
 void loop() {
     // Connect to Wi-Fi if not
     if (WiFi.status() != WL_CONNECTED) {
-        // If disconnected, attempt to reconnect asynchronously at regular intervals
+        // If disconnected, attempt to reconnect asynchronously
         if (wifiTimeoutCount == 0) {
-            if (!isInitLoop) {
-                Serial.println("Wi-Fi connection lost. Attempting to reconnect...");
-            }
+            Serial.println("Wi-Fi connection lost. Attempting to reconnect...");
             Serial.printf("Connecting to '%s'...\n", SSID);
             WiFi.setHostname(HOSTNAME);
             WiFi.begin(SSID, PASSWORD);
         }
-        // Trigger the reconnect attempt every 50 loops
         wifiTimeoutCount = (wifiTimeoutCount + 1) % WIFI_RECONNECT_LOOP_COUNT_MAX;
     } else {
         // If the connection is stable, reset the reconnect attempt counter
         wifiTimeoutCount = 0;
+    }
+
+    if (loopCooldownUntil != 0 && (long)(millis() - loopCooldownUntil) < 0) {
+        // In a cooldown period (for PC to fully change its power state), so skip main logic.
+        delay(LOOP_DELAY_MS);
+        return;
     }
 
     // Get current state
@@ -135,31 +139,31 @@ void loop() {
     lastIsOpened = (chassisState == HIGH) || lastIsOpened;
     isReportRequired = isReportRequired || lastIsAlive || lastIsOpened;
 
-    if (sataState == LOW) {
-        Serial.print("SATA: LOW ; ");
-    } else {
-        Serial.print("SATA: HIGH; ");
-    }
-
-    if (chassisState == LOW) {
-        Serial.println("CHASSIS: LOW ; ATX: LOW");
-    } else {
-        Serial.println("CHASSIS: HIGH; ATX: HIGH");
-    }
-
     // Report to the server
     if (reportLoopCount == 0 || isReportRequired) {
         if (WiFi.status() == WL_CONNECTED) {
             JsonDocument apiResponse;
             reportToServer(lastIsAlive, lastIsOpened, apiResponse);
+
             if (apiResponse["isSuccessful"].as<bool>()) {
-                //
+                if (apiResponse["responseBody"]["turnOffPC"].as<bool>()) {
+                    // Trigger ATX POWER
+                    digitalWrite(GPIO_ATX, HIGH);
+                    delay(ATX_POWER_TRIGGER_PULSE_DURATION_MS);
+                    digitalWrite(GPIO_ATX, LOW);
+
+                    // Set cooldown time to let PC fully change its power state
+                    loopCooldownUntil = millis() + (POST_ATX_POWER_TRIGGER_COOLDOWN_SECONDS * 1000);
+                    Serial.printf("Power triggered. Entering cooldown for %d seconds.\n", POST_ATX_POWER_TRIGGER_COOLDOWN_SECONDS);
+                }
+
+                lastIsAlive = false;
+                lastIsOpened = false;
+                isReportRequired = false;
             }
         }
     }
     reportLoopCount = (reportLoopCount + 1) % REPORT_LOOP_COUNT_MAX;
-
-    digitalWrite(GPIO_ATX, chassisState);
 
     delay(LOOP_DELAY_MS);
 }
