@@ -17,7 +17,9 @@ const int GPIO_SEED = 2;
 bool isReportRequired = false;
 bool lastIsAlive = false;
 bool lastIsOpened = false;
-int wifiTimeoutCount = 0;
+// Initialize to 1 to prevent an immediate reconnection attempt on the first loop,
+// as setup() already initiates it.
+int wifiTimeoutCount = 1;
 int reportLoopCount = 0;
 unsigned long loopCooldownUntil = 0;
 
@@ -104,6 +106,12 @@ void setup() {
     // Set Root CA certificate
     Serial.print("Setting Root CA certificate...");
     client.setCACert(ROOT_CA);
+    Serial.println("done.");
+
+    // Initial Wi-Fi connection attempt
+    Serial.printf("Connecting to '%s'...", SSID);
+    WiFi.setHostname(HOSTNAME);
+    WiFi.begin(SSID, PASSWORD);
     Serial.println("done.");
 
     Serial.println("Initialization complete.\n");
