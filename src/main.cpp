@@ -150,7 +150,7 @@ void loop() {
     int sataState = digitalRead(GPIO_SATA);
     int chassisState = digitalRead(GPIO_CHASSIS);
 
-    lastIsAlive = (sataState == HIGH) || lastIsAlive;
+    lastIsAlive = (sataState == LOW) || lastIsAlive;
     lastIsOpened = (chassisState == HIGH) || lastIsOpened;
     isReportRequired = isReportRequired || lastIsAlive || lastIsOpened;
 
