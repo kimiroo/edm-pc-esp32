@@ -1,4 +1,4 @@
-#define USE_HTTPS 0
+#define USE_HTTPS 1
 
 const char* PC_NAME = "PC Name";
 

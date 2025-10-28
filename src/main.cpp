@@ -21,7 +21,9 @@ bool isIsOpenedReported = false;
 // Initialize to 1 to prevent an immediate reconnection attempt on the first loop,
 // as setup() already initiates it.
 int wifiTimeoutCount = 1;
-int reportLoopCount = 0;
+// Initialize to 1 to prevent an immediate report since takes few seconds to connect to the Wi-Fi after boot
+int reportLoopCount = 1;
+int wifiCooldownLoopCount = 0;
 unsigned long loopCooldownUntil = 0;
 
 char sessionId[33];
@@ -35,15 +37,15 @@ void generateRandomString(char* buffer, int length) {
     buffer[length] = '\0'; // Null-terminate the string
 }
 
-void reportToServer(bool isAlive, bool isOpened, JsonDocument& result) {
-    result.clear(); // Clear previous data
+bool reportToServer(bool isAlive, bool isOpened, JsonDocument& responseDoc) {
+    responseDoc.clear();
 
-    Serial.printf("Requesting URL: %s\n", API_URL);
     if (http.begin(client, API_URL)) {
         http.addHeader("Content-Type", "application/json");
-        http.addHeader("X-DARAK-API-Key", API_KEY);
+        http.addHeader("X-DARAK-API-Access-Key", API_KEY);
 
         JsonDocument requestBody;
+        requestBody["pcID"] = PC_ID;
         requestBody["pcName"] = PC_NAME;
         requestBody["isAlive"] = isAlive;
         requestBody["isOpened"] = isOpened;
@@ -55,31 +57,37 @@ void reportToServer(bool isAlive, bool isOpened, JsonDocument& result) {
         int httpCode = http.POST(requestBodyString);
 
         if (httpCode > 0) {
-            JsonDocument responseBody;
-            DeserializationError err = deserializeJson(responseBody, http.getStream());
+            // HTTP request was successful. Check if response body exists.
+            if (http.getStream().available() > 0) {
+                // Check for errors in body
+                DeserializationError err = deserializeJson(responseDoc, http.getStream());
+                if (err) {
+                    Serial.print(F("deserializeJson() failed: "));
+                    Serial.println(err.c_str());
+                    http.end();
+                    return false; // Parsing JSON failed
+                }
 
-            if (err) { // Failed
-                Serial.print(F("deserializeJson() failed: "));
-                Serial.println(err.c_str());
-                result["isSuccessful"] = false;
-            } else { // Success
-                Serial.println("JSON response parsed successfully.");
-                result["isSuccessful"] = true;
-                result["responseBody"] = responseBody;
+                http.end();
+                return !responseDoc["turnOffPC"].isUnbound();
             }
+            http.end();
+            return true; // HTTP request success (Parsing JSON successful, or response body empty)
         } else {
-            Serial.printf("[HTTPS] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+            Serial.printf("POST request failed. error: %s\n", http.errorToString(httpCode).c_str());
         }
         http.end();
     } else {
-        Serial.printf("[HTTPS] Unable to connect to %s\n", API_URL);
+        Serial.printf("Unable to connect to %s\n", API_URL);
     }
+
+    return false; // Connection or POST request failed
 }
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("Waiting..."); // DEBUG
-    delay(5000);                  // DEBUG
+    //Serial.println("Waiting..."); // DEBUG
+    //delay(5000);                  // DEBUG
     Serial.println("Initializing...");
 
     // Initialize GPIO pins
@@ -112,17 +120,21 @@ void setup() {
     Serial.println("done.");
 
     Serial.println("Initialization complete.\n");
+    Serial.printf("PC Name: %s", PC_NAME);
+    Serial.printf("Session ID: %s\n\n", sessionId);
 }
 
 void loop() {
     // Connect to Wi-Fi if not
-    if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.status() != WL_CONNECTED && wifiCooldownLoopCount > INIT_WIFI_COOLDOWN_LOOP_COUNT_MAX) {
         // If disconnected, attempt to reconnect asynchronously
         if (wifiTimeoutCount == 0) {
             Serial.println("Wi-Fi connection lost. Attempting to reconnect...");
             Serial.printf("Connecting to '%s'...\n", SSID);
             WiFi.setHostname(HOSTNAME);
             WiFi.begin(SSID, PASSWORD);
+        } else {
+            Serial.printf("Waiting for the Wi-Fi to reconnect... (loop: %d)\n", wifiTimeoutCount);
         }
         wifiTimeoutCount = (wifiTimeoutCount + 1) % WIFI_RECONNECT_LOOP_COUNT_MAX;
     } else {
@@ -140,23 +152,23 @@ void loop() {
     int sataState = digitalRead(GPIO_SATA);
     int chassisState = digitalRead(GPIO_CHASSIS);
 
-    if (chassisState == HIGH && !lastIsOpened) {
+    if (chassisState == !CHASSIS_OPEN && isIsOpenedReported) {
         isIsOpenedReported = false;
     }
 
     lastIsAlive = (sataState == PC_ON) || lastIsAlive;
     lastIsOpened = (chassisState == CHASSIS_OPEN) || lastIsOpened;
-
     isReportRequired = !isIsOpenedReported && (isReportRequired || lastIsOpened);
 
     // Report to the server
     if (reportLoopCount == 0 || isReportRequired) {
         if (WiFi.status() == WL_CONNECTED) {
-            JsonDocument apiResponse;
-            reportToServer(lastIsAlive, lastIsOpened, apiResponse);
+            JsonDocument apiResponse; // 서버 응답 본문을 담을 변수
 
-            if (apiResponse["isSuccessful"].as<bool>()) {
-                if (apiResponse["responseBody"]["turnOffPC"].as<bool>()) {
+            if (reportToServer(lastIsAlive, lastIsOpened, apiResponse)) {
+                // reportToServer가 true를 반환하면, isReportRequired를 초기화
+
+                if (apiResponse["turnOffPC"].as<bool>() == true) {
                     // Trigger ATX POWER
                     digitalWrite(GPIO_ATX, HIGH);
                     delay(ATX_POWER_TRIGGER_PULSE_DURATION_MS);
@@ -171,10 +183,19 @@ void loop() {
                 lastIsOpened = false;
                 isReportRequired = false;
                 isIsOpenedReported = true;
+            } else {
+                Serial.println("Report to server failed.");
             }
+        } else {
+            Serial.println("Not connected to Wi-Fi. Not reporting...");
         }
     }
+
     reportLoopCount = (reportLoopCount + 1) % REPORT_LOOP_COUNT_MAX;
+
+    if (wifiCooldownLoopCount <= INIT_WIFI_COOLDOWN_LOOP_COUNT_MAX) {
+        wifiCooldownLoopCount += 1;
+    }
 
     delay(LOOP_DELAY_MS);
 }
