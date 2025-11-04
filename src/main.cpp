@@ -21,7 +21,7 @@ bool isIsOpenedReported = false;
 // Initialize to 1 to prevent an immediate reconnection attempt on the first loop,
 // as setup() already initiates it.
 int wifiTimeoutCount = 1;
-// Initialize to 1 to prevent an immediate report since takes few seconds to connect to the Wi-Fi after boot
+// Initialize to 1 to prevent an immediate report since it takes few seconds to connect to the Wi-Fi after boot
 int reportLoopCount = 1;
 int wifiCooldownLoopCount = 0;
 unsigned long loopCooldownUntil = 0;
