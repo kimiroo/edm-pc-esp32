@@ -1,6 +1,7 @@
 #define USE_HTTPS 1
 
 const char* PC_NAME = "PC Name";
+const char* PC_ID = "veryRANDOMpcID1234";
 
 const char* SSID = "Wi-Fi Name";
 const char* PASSWORD = "Wi-Fi Password";
